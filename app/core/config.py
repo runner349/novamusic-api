@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str
     APPLE_AUDIENCE: str
     APPLE_ISSUER: str = "https://appleid.apple.com"
+    
+    DEFAULT_USER_PHOTO_URL: str = "https://placehold.co/400x400/png?text=User"
+    DEFAULT_ARTIST_PHOTO_URL: str = "https://placehold.co/600x600/png?text=Artist"
+    DEFAULT_ALBUM_COVER_URL: str = "https://placehold.co/800x800/png?text=Album"
+    DEFAULT_PLAYLIST_COVER_URL: str = "https://placehold.co/800x800/png?text=Playlist"
+    DEFAULT_SONG_COVER_URL: str = "https://placehold.co/800x800/png?text=Song"
 
     class Config:
         env_file = ".env"

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_active_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.playlist import Playlist
 from app.models.playlist_song import PlaylistSong
@@ -18,6 +19,12 @@ from app.schemas.playlist import (
 from app.schemas.song import SongResponse
 
 router = APIRouter(prefix="/playlists", tags=["Playlists"])
+
+
+def apply_playlist_cover_fallback(playlist: Playlist) -> Playlist:
+    if not playlist.cover_url:
+        playlist.cover_url = settings.DEFAULT_PLAYLIST_COVER_URL
+    return playlist
 
 
 def get_playlist_or_404(db: Session, playlist_id: int) -> Playlist:
@@ -40,7 +47,7 @@ def create_playlist(
         user_id=current_user.id,
         title=payload.title.strip(),
         description=payload.description,
-        cover_url=payload.cover_url,
+        cover_url=payload.cover_url or settings.DEFAULT_PLAYLIST_COVER_URL,
         is_public=payload.is_public,
     )
 
@@ -48,6 +55,7 @@ def create_playlist(
     db.commit()
     db.refresh(playlist)
 
+    playlist = apply_playlist_cover_fallback(playlist)
     return playlist
 
 
@@ -66,7 +74,7 @@ def get_my_playlists(
         .limit(limit)
         .all()
     )
-    return playlists
+    return [apply_playlist_cover_fallback(playlist) for playlist in playlists]
 
 
 @router.get("/{playlist_id}", response_model=PlaylistDetailResponse)
@@ -82,6 +90,8 @@ def get_playlist_detail(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes acceso a esta playlist",
         )
+
+    playlist = apply_playlist_cover_fallback(playlist)
 
     playlist_items = (
         db.query(PlaylistSong)
@@ -128,7 +138,7 @@ def update_playlist(
         playlist.description = payload.description
 
     if payload.cover_url is not None:
-        playlist.cover_url = payload.cover_url
+        playlist.cover_url = payload.cover_url or settings.DEFAULT_PLAYLIST_COVER_URL
 
     if payload.is_public is not None:
         playlist.is_public = payload.is_public
@@ -136,6 +146,7 @@ def update_playlist(
     db.commit()
     db.refresh(playlist)
 
+    playlist = apply_playlist_cover_fallback(playlist)
     return playlist
 
 
@@ -172,6 +183,18 @@ def add_song_to_playlist(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No puedes modificar esta playlist",
+        )
+
+    playlist_song_count = (
+        db.query(PlaylistSong)
+        .filter(PlaylistSong.playlist_id == playlist_id)
+        .count()
+    )
+
+    if playlist_song_count >= 500:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La playlist alcanzó el límite máximo de 500 canciones",
         )
 
     song = db.query(Song).filter(Song.id == song_id).first()
@@ -317,14 +340,12 @@ def reorder_playlist(
             detail="Las posiciones deben ser consecutivas empezando en 1",
         )
 
-    # Paso 1: mover temporalmente a posiciones altas para evitar choque
     temp_base = 1000
     for index, item in enumerate(existing_items, start=1):
         item.position = temp_base + index
 
     db.flush()
 
-    # Paso 2: asignar posiciones finales
     for item in payload.items:
         existing_by_song_id[item.song_id].position = item.position
 

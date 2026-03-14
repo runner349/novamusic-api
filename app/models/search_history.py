@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -12,7 +12,7 @@ class SearchHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    query = Column(String(255), nullable=False)
+    query = Column(String, nullable=False)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_roles
+from app.api.deps import get_current_active_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.album import Album
 from app.models.artist import Artist
@@ -13,17 +14,35 @@ from app.schemas.song import SongResponse
 router = APIRouter(prefix="/albums", tags=["Albums"])
 
 
+def apply_album_cover_fallback(album: Album) -> Album:
+    if not album.cover_url:
+        album.cover_url = settings.DEFAULT_ALBUM_COVER_URL
+    return album
+
+
 @router.post("", response_model=AlbumResponse, status_code=status.HTTP_201_CREATED)
 def create_album(
     payload: AlbumCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "artist")),
+    current_user: User = Depends(get_current_active_user),
 ):
     artist = db.query(Artist).filter(Artist.id == payload.artist_id).first()
     if not artist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Artista no encontrado",
+        )
+
+    if current_user.role == "artist":
+        if artist.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No puedes crear álbumes para otro artista",
+            )
+    elif current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para crear álbumes",
         )
 
     existing_album = (
@@ -43,7 +62,7 @@ def create_album(
     album = Album(
         artist_id=payload.artist_id,
         title=payload.title.strip(),
-        cover_url=payload.cover_url,
+        cover_url=payload.cover_url or settings.DEFAULT_ALBUM_COVER_URL,
         release_date=payload.release_date,
     )
 
@@ -51,6 +70,7 @@ def create_album(
     db.commit()
     db.refresh(album)
 
+    album = apply_album_cover_fallback(album)
     return album
 
 
@@ -74,7 +94,7 @@ def get_albums(
         .all()
     )
 
-    return albums
+    return [apply_album_cover_fallback(album) for album in albums]
 
 
 @router.get("/{album_id}", response_model=AlbumResponse)
@@ -87,6 +107,7 @@ def get_album_by_id(album_id: int, db: Session = Depends(get_db)):
             detail="Álbum no encontrado",
         )
 
+    album = apply_album_cover_fallback(album)
     return album
 
 
@@ -95,7 +116,7 @@ def update_album(
     album_id: int,
     payload: AlbumUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "artist")),
+    current_user: User = Depends(get_current_active_user),
 ):
     album = db.query(Album).filter(Album.id == album_id).first()
 
@@ -103,6 +124,25 @@ def update_album(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Álbum no encontrado",
+        )
+
+    album_artist = db.query(Artist).filter(Artist.id == album.artist_id).first()
+    if not album_artist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Artista del álbum no encontrado",
+        )
+
+    if current_user.role == "artist":
+        if album_artist.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No puedes editar álbumes de otro artista",
+            )
+    elif current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para editar álbumes",
         )
 
     if payload.title is not None:
@@ -124,7 +164,7 @@ def update_album(
         album.title = normalized_title
 
     if payload.cover_url is not None:
-        album.cover_url = payload.cover_url
+        album.cover_url = payload.cover_url or settings.DEFAULT_ALBUM_COVER_URL
 
     if payload.release_date is not None:
         album.release_date = payload.release_date
@@ -132,6 +172,7 @@ def update_album(
     db.commit()
     db.refresh(album)
 
+    album = apply_album_cover_fallback(album)
     return album
 
 
@@ -158,5 +199,9 @@ def get_album_songs(
         .limit(limit)
         .all()
     )
+
+    for song in songs:
+        if not song.cover_url:
+            song.cover_url = album.cover_url or settings.DEFAULT_SONG_COVER_URL
 
     return songs

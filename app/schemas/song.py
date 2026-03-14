@@ -34,3 +34,16 @@ class SongResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SongListItemResponse(BaseModel):
+    id: int
+    album_id: int
+    album_title: str
+    artist_id: int
+    artist_name: str
+    title: str
+    duration_seconds: int
+    track_number: int
+    cover_url: Optional[str] = None
+    plays_count: int

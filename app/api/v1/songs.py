@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_active_user, require_roles
+from app.api.deps import get_current_active_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.album import Album
+from app.models.artist import Artist
 from app.models.play_history import PlayHistory
 from app.models.song import Song
 from app.models.user import User
@@ -15,6 +16,20 @@ from app.services.storage_service import storage_service
 router = APIRouter(prefix="/songs", tags=["Songs"])
 
 
+def apply_song_cover_fallback(db: Session, song: Song) -> Song:
+    if song.cover_url:
+        return song
+
+    album = db.query(Album).filter(Album.id == song.album_id).first()
+
+    if album and album.cover_url:
+        song.cover_url = album.cover_url
+    else:
+        song.cover_url = settings.DEFAULT_SONG_COVER_URL
+
+    return song
+
+
 @router.get("/popular", response_model=list[SongResponse])
 def get_popular_songs(
     limit: int = Query(default=10, ge=1, le=100),
@@ -22,24 +37,45 @@ def get_popular_songs(
 ):
     songs = (
         db.query(Song)
+        .filter(Song.audio_path.is_not(None), Song.audio_path != "")
         .order_by(Song.plays_count.desc(), Song.title.asc())
         .limit(limit)
         .all()
     )
-    return songs
+    songs_with_cover = [apply_song_cover_fallback(db, song) for song in songs]
+    return songs_with_cover
 
 
 @router.post("", response_model=SongResponse, status_code=status.HTTP_201_CREATED)
 def create_song(
     payload: SongCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "artist")),
+    current_user: User = Depends(get_current_active_user),
 ):
     album = db.query(Album).filter(Album.id == payload.album_id).first()
     if not album:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Álbum no encontrado",
+        )
+
+    album_artist = db.query(Artist).filter(Artist.id == album.artist_id).first()
+    if not album_artist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Artista del álbum no encontrado",
+        )
+
+    if current_user.role == "artist":
+        if album_artist.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No puedes crear canciones en álbumes de otro artista",
+            )
+    elif current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para crear canciones",
         )
 
     existing_track = (
@@ -70,6 +106,7 @@ def create_song(
     db.commit()
     db.refresh(song)
 
+    song = apply_song_cover_fallback(db, song)
     return song
 
 
@@ -80,7 +117,7 @@ def get_songs(
     album_id: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Song)
+    query = db.query(Song).filter(Song.audio_path.is_not(None), Song.audio_path != "")
 
     if album_id is not None:
         query = query.filter(Song.album_id == album_id)
@@ -93,7 +130,8 @@ def get_songs(
         .all()
     )
 
-    return songs
+    songs_with_cover = [apply_song_cover_fallback(db, song) for song in songs]
+    return songs_with_cover
 
 
 @router.get("/{song_id}", response_model=SongResponse)
@@ -106,6 +144,7 @@ def get_song_by_id(song_id: int, db: Session = Depends(get_db)):
             detail="Canción no encontrada",
         )
 
+    song = apply_song_cover_fallback(db, song)
     return song
 
 
@@ -114,7 +153,7 @@ def update_song(
     song_id: int,
     payload: SongUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "artist")),
+    current_user: User = Depends(get_current_active_user),
 ):
     song = db.query(Song).filter(Song.id == song_id).first()
 
@@ -122,6 +161,32 @@ def update_song(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Canción no encontrada",
+        )
+
+    album = db.query(Album).filter(Album.id == song.album_id).first()
+    if not album:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Álbum no encontrado",
+        )
+
+    album_artist = db.query(Artist).filter(Artist.id == album.artist_id).first()
+    if not album_artist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Artista del álbum no encontrado",
+        )
+
+    if current_user.role == "artist":
+        if album_artist.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No puedes editar canciones de otro artista",
+            )
+    elif current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para editar canciones",
         )
 
     new_track_number = song.track_number
@@ -162,6 +227,7 @@ def update_song(
     db.commit()
     db.refresh(song)
 
+    song = apply_song_cover_fallback(db, song)
     return song
 
 
@@ -230,6 +296,8 @@ def play_song(
     db.commit()
     db.refresh(song)
     db.refresh(history_item)
+
+    song = apply_song_cover_fallback(db, song)
 
     return PlaySongResponse(
         message="Reproducción registrada correctamente",

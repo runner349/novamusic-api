@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
 from datetime import datetime
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship
 
 from app.core.database import Base
 
@@ -11,9 +12,10 @@ class Playlist(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
 
-    title = Column(String(255), nullable=False)
-    description = Column(String, nullable=True)
-    cover_url = Column(String, nullable=True)
+    title = Column(String, nullable=False)
+    description = Column(String)
+    cover_url = Column(String)
+
     is_public = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

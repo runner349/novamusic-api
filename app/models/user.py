@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -10,24 +10,24 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-
-    username = Column(String(50), unique=True, nullable=False, index=True)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-
+    username = Column(String, unique=True, nullable=False, index=True)
+    email = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=True)
 
-    full_name = Column(String(255), nullable=True)
-    photo_url = Column(String, nullable=True)
+    full_name = Column(String)
+    photo_url = Column(String)
 
-    role = Column(String(20), nullable=False, default="user", index=True)
-    auth_provider = Column(String(20), nullable=False, default="local", index=True)
-    provider_user_id = Column(String(255), nullable=True, index=True)
+    role = Column(String(length=20), nullable=False, default="user", index=True)
+    auth_provider = Column(String(length=20), nullable=False, default="local", index=True)
+    provider_user_id = Column(String(length=255), nullable=True, index=True)
 
     is_active = Column(Boolean, nullable=False, default=True)
     is_verified = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    artist_profile = relationship("Artist", back_populates="user", uselist=False)
 
     playlists = relationship("Playlist", back_populates="user", cascade="all, delete-orphan")
     favorite_songs = relationship("FavoriteSong", back_populates="user", cascade="all, delete-orphan")

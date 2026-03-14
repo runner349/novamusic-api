@@ -10,6 +10,7 @@ from app.api.v1.search import router as search_router
 from app.api.v1.songs import router as songs_router
 from app.api.v1.uploads import router as uploads_router
 from app.api.v1.users import router as users_router
+from app.api.v1.home import router as home_router
 
 api_router = APIRouter()
 
@@ -23,3 +24,4 @@ api_router.include_router(history_router)
 api_router.include_router(artists_router)
 api_router.include_router(albums_router)
 api_router.include_router(uploads_router)
+api_router.include_router(home_router)

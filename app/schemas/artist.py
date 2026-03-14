@@ -1,27 +1,29 @@
-from datetime import datetime
+from pydantic import BaseModel
 from typing import Optional
-
-from pydantic import BaseModel, Field, ConfigDict
+from datetime import datetime
 
 
 class ArtistCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=255)
+    user_id: Optional[int] = None
+    name: str
     bio: Optional[str] = None
     photo_url: Optional[str] = None
 
 
 class ArtistUpdate(BaseModel):
-    name: Optional[str] = Field(default=None, min_length=2, max_length=255)
+    name: Optional[str] = None
     bio: Optional[str] = None
     photo_url: Optional[str] = None
 
 
 class ArtistResponse(BaseModel):
     id: int
+    user_id: Optional[int] = None
     name: str
     bio: Optional[str] = None
     photo_url: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        from_attributes = True

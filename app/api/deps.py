@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.models.user import User
+from app.models.artist import Artist
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
@@ -67,3 +68,23 @@ def require_roles(*allowed_roles: str) -> Callable:
         return current_user
 
     return role_checker
+
+def get_current_artist_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> Artist:
+    if current_user.role != "artist":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los artistas pueden realizar esta acción",
+        )
+
+    artist_profile = db.query(Artist).filter(Artist.user_id == current_user.id).first()
+
+    if not artist_profile:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tu cuenta no tiene perfil de artista asociado",
+        )
+
+    return artist_profile

@@ -107,9 +107,15 @@ def get_or_create_social_user(
 
         if full_name and not existing_user.full_name:
             existing_user.full_name = full_name
-
+        
+        #aqui fallback
         if photo_url and not existing_user.photo_url:
             existing_user.photo_url = photo_url
+            
+            if not existing_user.photo_url:
+                existing_user.photo_url = settings.DEFAULT_USER_PHOTO_URL
+        
+        #-------
 
         if is_verified:
             existing_user.is_verified = True
@@ -131,7 +137,7 @@ def get_or_create_social_user(
         email=email,
         password_hash=None,
         full_name=full_name,
-        photo_url=photo_url,
+        photo_url=photo_url or settings.DEFAULT_USER_PHOTO_URL,
         role="user",
         auth_provider=provider,
         provider_user_id=provider_user_id,
@@ -170,7 +176,7 @@ def register_user(payload: UserCreate, db: Session = Depends(get_db)):
         email=normalized_email,
         password_hash=hash_password(payload.password),
         full_name=payload.full_name.strip() if payload.full_name else None,
-        photo_url=payload.photo_url,
+        photo_url=payload.photo_url or settings.DEFAULT_USER_PHOTO_URL,
         role="user",
         auth_provider="local",
         is_active=True,

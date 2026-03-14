@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, DateTime, ForeignKey
+from sqlalchemy import Column, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -15,7 +15,7 @@ class PlayHistory(Base):
     song_id = Column(Integer, ForeignKey("songs.id"), nullable=False, index=True)
 
     played_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    seconds_listened = Column(Integer, nullable=False, default=0)
+    seconds_listened = Column(Integer, nullable=False)
 
     user = relationship("User", back_populates="play_history")
-    song = relationship("Song", back_populates="play_history")
+    song = relationship("Song")

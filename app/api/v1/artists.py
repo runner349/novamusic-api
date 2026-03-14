@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, require_roles
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.album import Album
 from app.models.artist import Artist
@@ -15,11 +15,17 @@ from app.schemas.song import SongResponse
 router = APIRouter(prefix="/artists", tags=["Artists"])
 
 
+def apply_artist_photo_fallback(artist: Artist) -> Artist:
+    if not artist.photo_url:
+        artist.photo_url = settings.DEFAULT_ARTIST_PHOTO_URL
+    return artist
+
+
 @router.post("", response_model=ArtistResponse, status_code=status.HTTP_201_CREATED)
 def create_artist(
     payload: ArtistCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "artist")),
+    current_user: User = Depends(require_roles("admin")),
 ):
     normalized_name = payload.name.strip()
 
@@ -30,16 +36,39 @@ def create_artist(
             detail="Ya existe un artista con ese nombre",
         )
 
+    if payload.user_id is not None:
+        user = db.query(User).filter(User.id == payload.user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Usuario no encontrado",
+            )
+
+        if user.role != "artist":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El usuario asociado debe tener rol artist",
+            )
+
+        existing_link = db.query(Artist).filter(Artist.user_id == payload.user_id).first()
+        if existing_link:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ese usuario ya tiene un perfil de artista asociado",
+            )
+
     artist = Artist(
+        user_id=payload.user_id,
         name=normalized_name,
         bio=payload.bio,
-        photo_url=payload.photo_url,
+        photo_url=payload.photo_url or settings.DEFAULT_ARTIST_PHOTO_URL,
     )
 
     db.add(artist)
     db.commit()
     db.refresh(artist)
 
+    artist = apply_artist_photo_fallback(artist)
     return artist
 
 
@@ -56,7 +85,8 @@ def get_artists(
         .limit(limit)
         .all()
     )
-    return artists
+
+    return [apply_artist_photo_fallback(artist) for artist in artists]
 
 
 @router.get("/{artist_id}", response_model=ArtistResponse)
@@ -69,6 +99,7 @@ def get_artist_by_id(artist_id: int, db: Session = Depends(get_db)):
             detail="Artista no encontrado",
         )
 
+    artist = apply_artist_photo_fallback(artist)
     return artist
 
 
@@ -77,7 +108,7 @@ def update_artist(
     artist_id: int,
     payload: ArtistUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "artist")),
+    current_user: User = Depends(get_current_active_user),
 ):
     artist = db.query(Artist).filter(Artist.id == artist_id).first()
 
@@ -85,6 +116,18 @@ def update_artist(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Artista no encontrado",
+        )
+
+    if current_user.role == "artist":
+        if artist.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No puedes editar el perfil de otro artista",
+            )
+    elif current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para editar artistas",
         )
 
     if payload.name is not None:
@@ -105,11 +148,12 @@ def update_artist(
         artist.bio = payload.bio
 
     if payload.photo_url is not None:
-        artist.photo_url = payload.photo_url
+        artist.photo_url = payload.photo_url or settings.DEFAULT_ARTIST_PHOTO_URL
 
     db.commit()
     db.refresh(artist)
 
+    artist = apply_artist_photo_fallback(artist)
     return artist
 
 
@@ -136,6 +180,10 @@ def get_artist_albums(
         .limit(limit)
         .all()
     )
+
+    for album in albums:
+        if not album.cover_url:
+            album.cover_url = settings.DEFAULT_ALBUM_COVER_URL
 
     return albums
 
@@ -164,5 +212,12 @@ def get_artist_songs(
         .limit(limit)
         .all()
     )
+
+    for song in songs:
+        if not song.cover_url:
+            album = db.query(Album).filter(Album.id == song.album_id).first()
+            song.cover_url = (
+                album.cover_url if album and album.cover_url else settings.DEFAULT_SONG_COVER_URL
+            )
 
     return songs
